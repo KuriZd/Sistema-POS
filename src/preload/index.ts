@@ -7,8 +7,9 @@ contextBridge.exposeInMainWorld('pos', {
     logout: () => ipcRenderer.invoke('auth:logout')
   },
   products: {
-    list: () => ipcRenderer.invoke('products:list'),
-    create: (payload: Record<string, unknown>) => ipcRenderer.invoke('products:create', payload)
+    list: (query: Record<string, unknown>) => ipcRenderer.invoke('products:list', query),
+    update: (id: number, payload: Record<string, unknown>) => ipcRenderer.invoke('products:update', id, payload),
+    remove: (id: number) => ipcRenderer.invoke('products:remove', id)
   },
   sales: {
     create: () => ipcRenderer.invoke('sales:create'),
