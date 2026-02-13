@@ -4,7 +4,7 @@ import type { JSX } from 'react'
 
 import LoginView from './views/LoginView'
 import PosView from './views/PosView'
-import ProductsView from './views/ProductsView'
+import ProductsView from './views/products/ProductsView'
 import ReportsView from './views/ReportsView'
 
 import AppLayout from './components/layout/AppLayout'
