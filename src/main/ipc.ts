@@ -1,5 +1,4 @@
 // src/main/ipc.ts
-// Nota: este archivo es para manejar la lógica de IPC entre el proceso principal y el renderer.
 import { ipcMain } from 'electron'
 import crypto from 'node:crypto'
 import { getPrisma } from './prisma'
@@ -36,6 +35,28 @@ type PayPayload = {
   }>
 }
 
+type ProductsListQuery = {
+  page: number
+  pageSize: number
+  search?: string
+}
+
+type ProductDTO = {
+  id: number
+  sku: string
+  barcode: string | null
+  name: string
+  price: number
+  stock: number | null
+}
+
+type ProductsListResult = {
+  items: ProductDTO[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 function assertInt(n: unknown, field: string): void {
   if (typeof n !== 'number' || !Number.isInteger(n)) throw new Error(`${field} debe ser entero`)
 }
@@ -44,9 +65,16 @@ function assertNonEmptyString(s: unknown, field: string): void {
   if (typeof s !== 'string' || s.trim().length === 0) throw new Error(`${field} es requerido`)
 }
 
+function clampInt(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
 export function registerIpc(): void {
   const prisma = getPrisma()
 
+  // -------------------------
+  // Auth
+  // -------------------------
   ipcMain.handle('auth:login', async (_e, pin: string) => {
     assertNonEmptyString(pin, 'PIN')
 
@@ -71,9 +99,54 @@ export function registerIpc(): void {
     currentUserId = null
   })
 
-  ipcMain.handle('products:list', async () => {
-    return prisma.product.findMany({ where: { active: true }, orderBy: { id: 'desc' } })
-  })
+  // -------------------------
+  // Products
+  // -------------------------
+  ipcMain.handle(
+    'products:list',
+    async (_e, query?: Partial<ProductsListQuery>): Promise<ProductsListResult> => {
+      const rawPage = Number(query?.page ?? 1)
+      const rawPageSize = Number(query?.pageSize ?? 20)
+
+      const page = Number.isFinite(rawPage) ? clampInt(Math.trunc(rawPage), 1, 1_000_000) : 1
+      const pageSize = Number.isFinite(rawPageSize) ? clampInt(Math.trunc(rawPageSize), 5, 100) : 20
+      const skip = (page - 1) * pageSize
+
+      const search = (query?.search ?? '').trim()
+
+      const where =
+        search.length > 0
+          ? {
+              active: true,
+              OR: [
+                { name: { contains: search } },
+                { sku: { contains: search } },
+                { barcode: { contains: search } }
+              ]
+            }
+          : { active: true }
+
+      const [total, items] = await Promise.all([
+        prisma.product.count({ where }),
+        prisma.product.findMany({
+          where,
+          orderBy: { id: 'desc' },
+          skip,
+          take: pageSize,
+          select: {
+            id: true,
+            sku: true,
+            barcode: true,
+            name: true,
+            price: true,
+            stock: true
+          }
+        })
+      ])
+
+      return { items, total, page, pageSize }
+    }
+  )
 
   ipcMain.handle('products:create', async (_e, payload: CreateProductPayload) => {
     assertNonEmptyString(payload?.sku, 'sku')
@@ -93,6 +166,9 @@ export function registerIpc(): void {
     })
   })
 
+  // -------------------------
+  // Sales
+  // -------------------------
   ipcMain.handle('sales:create', async () => {
     if (!currentUserId) throw new Error('No auth')
 
@@ -104,7 +180,7 @@ export function registerIpc(): void {
         subtotal: 0,
         tax: 0,
         total: 0,
-        status: SaleStatus.PAID // luego conviene cambiar el flujo (ver nota abajo)
+        status: SaleStatus.PAID
       }
     })
   })
