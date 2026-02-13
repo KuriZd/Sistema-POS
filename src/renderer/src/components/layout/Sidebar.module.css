@@ -1,0 +1,181 @@
+/* src/renderer/src/components/layout/Sidebar.module.css */
+
+.sidebar {
+  height: 100%;
+  background: #ffffff;
+  border-right: 1px solid #eef1f6;
+  display: grid;
+  grid-template-rows: 64px 1fr 90px;
+}
+
+.collapsed {
+  width: 76px;
+}
+
+.expanded {
+  width: 200px;
+}
+
+/* -----------------------------
+   Header
+----------------------------- */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 10px;
+}
+
+.menuButton {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.menuButton:hover {
+  background: #f4f6fb;
+}
+
+/* Hamburguesa */
+.menuIcon {
+  width: 24px;
+  height: 18px;
+  position: relative;
+}
+
+.menuIcon::before,
+.menuIcon::after,
+.menuIcon span {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 24px;
+  height: 2px;
+  background: #111827;
+  border-radius: 999px;
+}
+
+.menuIcon::before {
+  top: 0;
+}
+
+.menuIcon span {
+  top: 8px;
+}
+
+.menuIcon::after {
+  bottom: 0;
+}
+
+.logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+/* Al colapsar, ya no existe logo, así que centramos visualmente */
+.collapsed .header {
+  justify-content: flex-start;
+}
+
+/* -----------------------------
+   Nav Items
+----------------------------- */
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 14px 12px;
+}
+
+.item {
+  width: 100%;
+  height: 46px;
+  border-radius: 12px;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: background 120ms ease;
+  color: #111827;
+}
+
+.item:hover {
+  background: #f4f6fb;
+}
+
+/* Marcador cuadrado SOLO para el ícono */
+.iconWrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  transition: background 120ms ease;
+}
+
+.iconWrapActive {
+  background: #eaf1ff;
+}
+
+.itemIcon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.itemLabel {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* -----------------------------
+   Footer (Logout)
+----------------------------- */
+.footer {
+  display: grid;
+  align-items: end;
+  padding: 12px;
+}
+
+.logout {
+  width: 100%;
+  height: 46px;
+  border-radius: 12px;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.logout:hover {
+  background: #f4f6fb;
+}
+
+.logoutIcon {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+/* Colapsada: centramos contenido */
+.collapsed .item,
+.collapsed .logout {
+  justify-content: center;
+  padding: 0;
+}
+
+.collapsed .nav {
+  padding: 14px 10px;
+}

@@ -1,0 +1,25 @@
+/* main.css */
+@import './base.css';
+
+/* --- Base global: ocupa toda la ventana y fondo blanco --- */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #ffffff;
+}
+
+body {
+  display: block; /* quitamos flex del template */
+  overflow: auto; /* no recortar contenido */
+  background-image: none; /* quitamos ondas */
+  user-select: none;
+  color: #111827;
+}
+
+#root {
+  height: 100%;
+  margin: 0; /* quitamos margin-bottom: 80px */
+  display: block; /* dejamos que tus vistas controlen layout */
+}

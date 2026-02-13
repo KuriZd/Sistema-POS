@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  ADMIN
+  CASHIER
+  SUPERVISOR
+}
+
+enum SaleStatus {
+  PAID
+  CANCELED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  OTHER
+}
+
+enum CashMovementType {
+  IN
+  OUT
+}
+
+enum InventoryMovementType {
+  IN
+  OUT
+  ADJUST
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  pinHash   String
+  role      Role     @default(CASHIER)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  sales     Sale[]
+  audits    AuditLog[]
+}
+
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  products  Product[]
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  sku         String   @unique
+  barcode     String?  @unique
+  name        String
+  price       Int
+  cost        Int      @default(0)
+  taxRateBp   Int      @default(0)
+  stock       Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  categoryId  Int?
+  category    Category? @relation(fields: [categoryId], references: [id])
+
+  saleItems   SaleItem[]
+  invMoves    InventoryMovement[]
+}
+
+model Sale {
+  id         Int        @id @default(autoincrement())
+  folio      String     @unique
+  status     SaleStatus @default(PAID)
+
+  subtotal   Int
+  tax        Int
+  total      Int
+
+  cashierId  Int
+  cashier    User       @relation(fields: [cashierId], references: [id])
+
+  createdAt  DateTime   @default(now())
+
+  items      SaleItem[]
+  payments   Payment[]
+}
+
+model SaleItem {
+  id        Int      @id @default(autoincrement())
+  saleId    Int
+  productId Int
+  qty       Int
+  price     Int
+  discount  Int      @default(0)
+  lineTotal Int
+  createdAt DateTime @default(now())
+
+  sale      Sale     @relation(fields: [saleId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+}
+
+model Payment {
+  id        Int           @id @default(autoincrement())
+  saleId    Int
+  method    PaymentMethod
+  amount    Int
+  reference String?
+  createdAt DateTime      @default(now())
+
+  sale      Sale          @relation(fields: [saleId], references: [id])
+}
+
+model CashSession {
+  id          Int      @id @default(autoincrement())
+  openedAt    DateTime @default(now())
+  closedAt    DateTime?
+  initialCash Int      @default(0)
+  expected    Int      @default(0)
+  counted     Int      @default(0)
+  diff        Int      @default(0)
+
+  movements   CashMovement[]
+}
+
+model CashMovement {
+  id        Int              @id @default(autoincrement())
+  sessionId Int
+  type      CashMovementType
+  amount    Int
+  reason    String?
+  createdAt DateTime         @default(now())
+
+  session   CashSession @relation(fields: [sessionId], references: [id])
+}
+
+model InventoryMovement {
+  id        Int                   @id @default(autoincrement())
+  productId Int
+  type      InventoryMovementType
+  qty       Int
+  reason    String?
+  createdAt DateTime              @default(now())
+
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  action    String
+  metaJson  String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+}

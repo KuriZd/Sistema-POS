@@ -1,0 +1,51 @@
+/* src/renderer/src/components/layout/TopNav.module.css */
+
+.topnav {
+  height: 56px;
+  background: #ffffff;
+  border-bottom: 1px solid #eceff5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.iconButton {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid #d7dbe6;
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.iconButton:hover {
+  background: #f4f6fb;
+}
+
+.iconImg {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
