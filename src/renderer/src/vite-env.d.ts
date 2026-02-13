@@ -1,3 +1,4 @@
+// src/renderer/src/vite-env.d.ts
 export {}
 
 import type { PaymentMethod, Role } from '@prisma/client'
@@ -38,6 +39,19 @@ type CreateProductPayload = {
   categoryId?: number | null
 }
 
+type ProductsListQuery = {
+  page: number
+  pageSize: number
+  search?: string
+}
+
+type ProductsListResult = {
+  items: ProductDTO[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 type SaleDTO = {
   id: number
   folio: string
@@ -67,8 +81,10 @@ declare global {
         logout(): Promise<void>
       }
       products: {
-        list(): Promise<ProductDTO[]>
+        list(query: ProductsListQuery): Promise<ProductsListResult>
         create(payload: CreateProductPayload): Promise<ProductDTO>
+        update(id: number, payload: Partial<CreateProductPayload>): Promise<ProductDTO>
+        remove(id: number): Promise<{ ok: true }>
       }
       sales: {
         create(): Promise<SaleDTO>
