@@ -1,11 +1,17 @@
+// src/main/prisma.ts
 import { app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Prisma } from '@prisma/client'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { is } from '@electron-toolkit/utils'
 
-let prisma: PrismaClient | null = null
+declare global {
+  // eslint-disable-next-line no-var
+  var __prisma__: PrismaClient | null | undefined
+  // eslint-disable-next-line no-var
+  var __prismaHooked__: boolean | undefined
+}
 
 function toFileUrl(absPath: string): string {
   return `file:${absPath.replace(/\\/g, '/')}`
@@ -27,18 +33,49 @@ function resolveDbUrl(): string {
 
   const prodDb = path.join(app.getPath('userData'), 'pos.db')
   fs.mkdirSync(path.dirname(prodDb), { recursive: true })
+
   const url = toFileUrl(prodDb)
   console.log('[DB] Prisma URL:', url)
   return url
 }
 
-export function getPrisma(): PrismaClient {
-  if (prisma) return prisma
-
+function createPrismaClient(): PrismaClient {
   const adapter = new PrismaBetterSqlite3({ url: resolveDbUrl() })
 
-  // Prisma 7: debe ser con adapter (o accelerateUrl)
-  prisma = new PrismaClient({ adapter })
+  const log: Prisma.LogDefinition[] = is.dev
+    ? [
+        { level: 'error', emit: 'event' },
+        { level: 'warn', emit: 'event' }
+      ]
+    : []
 
-  return prisma
+  const client = new PrismaClient({ adapter, log })
+
+  if (is.dev) {
+    client.$on('error', (e) => console.error('[Prisma:error]', e))
+    client.$on('warn', (e) => console.warn('[Prisma:warn]', e))
+  }
+
+  return client
+}
+
+export function getPrisma(): PrismaClient {
+  if (global.__prisma__) return global.__prisma__
+
+  global.__prisma__ = createPrismaClient()
+
+  if (!global.__prismaHooked__) {
+    global.__prismaHooked__ = true
+
+    app.on('before-quit', async () => {
+      try {
+        await global.__prisma__?.$disconnect()
+        global.__prisma__ = null
+      } catch (err) {
+        console.error('[DB] Error al desconectar Prisma:', err)
+      }
+    })
+  }
+
+  return global.__prisma__
 }

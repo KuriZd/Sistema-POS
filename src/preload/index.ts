@@ -1,4 +1,6 @@
+// src/preload/index.ts
 import { contextBridge, ipcRenderer } from 'electron'
+import type { CreateProductPayload } from '../renderer/src/repositories/productRepository'
 
 contextBridge.exposeInMainWorld('pos', {
   auth: {
@@ -8,7 +10,10 @@ contextBridge.exposeInMainWorld('pos', {
   },
   products: {
     list: (query: Record<string, unknown>) => ipcRenderer.invoke('products:list', query),
-    update: (id: number, payload: Record<string, unknown>) => ipcRenderer.invoke('products:update', id, payload),
+    update: (id: number, payload: Record<string, unknown>) =>
+      ipcRenderer.invoke('products:update', id, payload),
+    create: (payload: CreateProductPayload) => ipcRenderer.invoke('products:create', payload),
+
     remove: (id: number) => ipcRenderer.invoke('products:remove', id)
   },
   sales: {

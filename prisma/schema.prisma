@@ -61,10 +61,21 @@ model Product {
   sku         String   @unique
   barcode     String?  @unique
   name        String
+
+  // Se guardan en centavos
   price       Int
   cost        Int      @default(0)
-  taxRateBp   Int      @default(0)
+
+  // % ganancia en basis points (porcentaje * 100) para soportar decimales y >100
+  profitPctBp Int      @default(0)
+
   stock       Int      @default(0)
+  stockMin    Int      @default(0)
+  stockMax    Int      @default(0)
+
+  imagePath   String?
+
+  taxRateBp   Int      @default(0)
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
 
@@ -74,6 +85,7 @@ model Product {
   saleItems   SaleItem[]
   invMoves    InventoryMovement[]
 }
+
 
 model Sale {
   id         Int        @id @default(autoincrement())
