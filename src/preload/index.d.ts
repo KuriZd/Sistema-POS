@@ -12,6 +12,15 @@ declare global {
   interface Window {
     electron: typeof electronAPI
     api: typeof api
+    pos: {
+      products: {
+        create: (payload: CreateProductPayload) => Promise<{ id: number }>
+      }
+      auth: {
+        me: () => Promise<{ id: number; name: string; role: string }>
+        logout: () => Promise<void>
+      }
+    }
   }
 }
 
