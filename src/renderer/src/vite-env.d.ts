@@ -1,56 +1,71 @@
 // src/renderer/src/vite-env.d.ts
-export {}
+/// <reference types="vite/client" />
 
 import type { PaymentMethod, Role } from '@prisma/client'
 
-/* -----------------------------
- * Tipos base (sin any)
- * ----------------------------- */
-type AuthUser = {
-  id: number
-  name: string
-  role: Role
-}
-
+type AuthUser = { id: number; name: string; role: Role }
 type AuthLoginResult = { ok: true; user: AuthUser } | { ok: false; error: string }
 
-type ProductDTO = {
+// ------------------------------------------------------
+// Products
+// ------------------------------------------------------
+
+/**
+ * Payload para crear producto (alineado con products.ipc.ts).
+ * - Los campos numéricos se mandan en "cents" / enteros según tu UI.
+ * - barcode es opcional; si no se manda, el main usa sku por defecto.
+ */
+type CreateProductPayload = {
+  sku: string
+  name: string
+  price: number
+  barcode?: string | null
+
+  cost?: number
+  profitPctBp?: number
+
+  stock?: number
+  stockMin?: number
+  stockMax?: number
+
+  imageDataUrl?: string | null
+}
+
+type ProductListItemDTO = {
+  id: number
+  sku: string
+  barcode: string | null
+  name: string
+  price: number
+  stock: number | null
+}
+
+type ProductDetailsDTO = {
   id: number
   sku: string
   barcode: string | null
   name: string
   price: number
   cost: number
-  taxRateBp: number
+  profitPctBp: number
   stock: number
+  stockMin: number
+  stockMax: number
+  imageUrl: string | null
   active: boolean
-  createdAt: string | Date
-  categoryId?: number | null
 }
 
-type CreateProductPayload = {
-  sku: string
-  barcode?: string | null
-  name: string
-  price: number
-  cost?: number
-  taxRateBp?: number
-  stock?: number
-  categoryId?: number | null
-}
-
-type ProductsListQuery = {
-  page: number
-  pageSize: number
-  search?: string
-}
-
+type ProductsListQuery = { page: number; pageSize: number; search?: string }
 type ProductsListResult = {
-  items: ProductDTO[]
+  items: ProductListItemDTO[]
   total: number
   page: number
   pageSize: number
 }
+
+// ------------------------------------------------------
+// Sales
+// ------------------------------------------------------
 
 type SaleDTO = {
   id: number
@@ -58,20 +73,13 @@ type SaleDTO = {
   subtotal: number
   tax: number
   total: number
-  status: 'PAID' | 'CANCELED' | 'REFUNDED' // si luego agregas OPEN, aquí lo incluyes
+  status: 'PAID' | 'CANCELED' | 'REFUNDED'
   cashierId: number
   createdAt: string | Date
 }
 
-type PayItem = {
-  method: PaymentMethod
-  amount: number
-  reference?: string | null
-}
+type PayItem = { method: PaymentMethod; amount: number; reference?: string | null }
 
-/* -----------------------------
- * API expuesta por preload
- * ----------------------------- */
 declare global {
   interface Window {
     pos: {
@@ -82,10 +90,12 @@ declare global {
       }
       products: {
         list(query: ProductsListQuery): Promise<ProductsListResult>
-        create(payload: CreateProductPayload): Promise<ProductDTO>
-        update(id: number, payload: Partial<CreateProductPayload>): Promise<ProductDTO>
+        get(id: number): Promise<ProductDetailsDTO>
+        create(payload: CreateProductPayload): Promise<{ id: number }>
+        update(id: number, payload: Partial<CreateProductPayload>): Promise<{ id: number }>
         remove(id: number): Promise<{ ok: true }>
       }
+
       sales: {
         create(): Promise<SaleDTO>
         addByBarcode(saleId: number, barcodeOrSku: string, qty: number): Promise<SaleDTO>
@@ -94,3 +104,5 @@ declare global {
     }
   }
 }
+
+export {}
