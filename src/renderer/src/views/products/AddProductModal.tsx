@@ -1,3 +1,4 @@
+// src/renderer/src/views/products/AddProductModal.tsx
 import {
   useCallback,
   useEffect,
@@ -5,10 +6,11 @@ import {
   useState,
   type JSX,
   type MouseEvent,
-  type ChangeEvent
+  type ChangeEvent,
+  type RefObject
 } from 'react'
 import { createPortal } from 'react-dom'
-import { FiX, FiSave, FiImage, FiHelpCircle, FiPrinter } from 'react-icons/fi'
+import { FiX, FiSave, FiImage, FiHelpCircle } from 'react-icons/fi'
 import { MdOutlineQrCode2 } from 'react-icons/md'
 import { CiBarcode } from 'react-icons/ci'
 import { QRCodeSVG } from 'qrcode.react'
@@ -18,6 +20,14 @@ import { productRepository, type CreateProductPayload } from '../../repositories
 type Props = {
   open: boolean
   onClose: () => void
+
+  /**
+   * Soporta ambos nombres para evitar desalineaciones:
+   * - productId: recomendado (camelCase)
+   * - productID: legado (lo que tienes hoy)
+   */
+  productId?: number | null
+  productID?: number | null
 }
 
 type FormState = {
@@ -43,6 +53,32 @@ const initialState: FormState = {
 }
 
 type PriceEditMode = 'sell' | 'pct' | null
+type ImageIntent = 'keep' | 'replace' | 'remove'
+
+type ProductDetails = {
+  id: number
+  sku: string
+  name: string
+  price: number
+  cost: number
+  profitPctBp: number
+  stock: number
+  stockMin: number
+  stockMax: number
+  imageUrl?: string | null
+  imagePath?: string | null
+}
+
+type ProductsBridge = {
+  get?: (id: number) => Promise<ProductDetails>
+  update?: (id: number, payload: Partial<CreateProductPayload>) => Promise<void>
+  getBySku?: (sku: string) => Promise<ProductDetails | null>
+}
+
+function getProductsBridge(): ProductsBridge | null {
+  const w = window as unknown as { pos?: { products?: ProductsBridge } }
+  return w.pos?.products ?? null
+}
 
 function useEscapeToClose(open: boolean, onClose: () => void): void {
   useEffect(() => {
@@ -63,9 +99,9 @@ function getCryptoRandomInt(maxExclusive: number): number {
   if (maxExclusive <= 0) return 0
 
   const hasCrypto = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function'
-
   if (!hasCrypto) return Math.floor(Math.random() * maxExclusive)
 
+  // Rejection sampling para evitar sesgo por módulo
   const range = 0xffffffff
   const limit = range - (range % maxExclusive)
   const buffer = new Uint32Array(1)
@@ -126,8 +162,16 @@ function toCents(value: number): number {
   return Math.round(value * 100)
 }
 
+function fromCentsToInput(cents: number): string {
+  return formatNumber((cents ?? 0) / 100, 2)
+}
+
 function pctToBp(pct: number): number {
   return Math.round(pct * 100)
+}
+
+function bpToPctInput(bp: number): string {
+  return formatNumber((bp ?? 0) / 100, 2)
 }
 
 /* --------------------------- Utils de archivos ---------------------------- */
@@ -162,8 +206,125 @@ async function buildCreateProductPayload(
   }
 
   if (imageFile) payload.imageDataUrl = await fileToDataUrl(imageFile)
+  return payload
+}
+
+async function buildUpdateProductPayload(
+  form: FormState,
+  imageFile: File | null,
+  imageIntent: ImageIntent
+): Promise<Partial<CreateProductPayload>> {
+  const buy = parseDecimal(form.buyPrice) ?? 0
+  const sell = parseDecimal(form.sellPrice) ?? 0
+  const pct = parseDecimal(form.profitPct) ?? 0
+
+  const payload: Partial<CreateProductPayload> = {
+    sku: form.code.trim(),
+    name: form.name.trim(),
+    stock: parseInteger(form.stock) ?? 0,
+    stockMin: parseInteger(form.stockMin) ?? 0,
+    stockMax: parseInteger(form.stockMax) ?? 0,
+    cost: toCents(buy),
+    price: toCents(sell),
+    profitPctBp: pctToBp(pct)
+  }
+
+  if (imageIntent === 'remove') {
+    payload.imageDataUrl = null
+    return payload
+  }
+
+  if (imageIntent === 'replace') {
+    if (!imageFile) return payload
+    payload.imageDataUrl = await fileToDataUrl(imageFile)
+    return payload
+  }
 
   return payload
+}
+
+function toRenderableImageUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.trim().length === 0) return null
+
+  const v = value.trim()
+  if (/^(data:|file:|https?:)/i.test(v)) return v
+
+  const normalizedPath = v.replace(/\\/g, '/')
+
+  // Windows drive: C:/...
+  if (/^[a-zA-Z]:\//.test(normalizedPath)) return `file:///${normalizedPath}`
+
+  // Unix absolute: /home/...
+  if (normalizedPath.startsWith('/')) return `file://${normalizedPath}`
+
+  return `file:///${normalizedPath}`
+}
+
+/* ----------------------------- Utils de QR ------------------------------- */
+
+const QR_DOWNLOAD_SIZE = 512
+
+function buildQrPayload(sku: string, name: string): string {
+  return JSON.stringify({ v: 1, sku, name })
+}
+
+function sanitizeFilenamePart(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9-]/g, '')
+    .slice(0, 40)
+}
+
+function nextAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+}
+
+function getSvgMarkup(svg: SVGElement, size: number): string {
+  const clone = svg.cloneNode(true) as SVGElement
+  if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clone.setAttribute('width', String(size))
+  clone.setAttribute('height', String(size))
+  return new XMLSerializer().serializeToString(clone)
+}
+
+async function downloadQrSvgAsPng(svg: SVGElement, filename: string, size: number): Promise<void> {
+  const markup = getSvgMarkup(svg, size)
+  const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
+
+  const img = new Image()
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve()
+    img.onerror = () => reject(new Error('No se pudo preparar el QR para descarga'))
+    img.src = svgDataUrl
+  })
+
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('No se pudo generar el QR (canvas no disponible)')
+
+  ctx.drawImage(img, 0, 0, size, size)
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('No se pudo generar el PNG'))),
+      'image/png'
+    )
+  })
+
+  const url = URL.createObjectURL(blob)
+  try {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 /* ------------------------------ UI Blocks -------------------------------- */
@@ -200,7 +361,7 @@ function ModalHeader({ title, onClose }: ModalHeaderProps): JSX.Element {
     <div className={styles.header}>
       <h3 className={styles.title}>{title}</h3>
 
-      <button className={styles.closeBtn} onClick={onClose} aria-label="Cerrar">
+      <button className={styles.closeBtn} type="button" onClick={onClose} aria-label="Cerrar">
         <FiX />
       </button>
     </div>
@@ -215,86 +376,11 @@ type SaveFooterProps = {
 function SaveFooter({ onSave, disabled }: SaveFooterProps): JSX.Element {
   return (
     <div className={styles.footer}>
-      <button className={styles.saveBtn} onClick={onSave} disabled={disabled}>
+      <button className={styles.saveBtn} type="button" onClick={onSave} disabled={disabled}>
         <span>{disabled ? 'Guardando...' : 'Guardar'}</span>
         <FiSave />
       </button>
     </div>
-  )
-}
-
-/* ------------------------------ QR Modal --------------------------------- */
-
-type QrPrintModalProps = {
-  open: boolean
-  value: string
-  onClose: () => void
-}
-
-function QrPrintModal({ open, value, onClose }: QrPrintModalProps): JSX.Element | null {
-  const qrRef = useRef<HTMLDivElement | null>(null)
-
-  if (!open) return null
-
-  function handlePrint(): void {
-    const node = qrRef.current
-    if (!node) return
-
-    const printWindow = window.open('', '_blank', 'width=520,height=700')
-    if (!printWindow) return
-
-    const qrMarkup = node.innerHTML
-
-    printWindow.document.open()
-    printWindow.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Imprimir QR</title>
-          <style>
-            body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 24px; }
-            .wrap { display: grid; place-items: center; gap: 12px; }
-            .code { font-size: 16px; font-weight: 600; letter-spacing: 0.08em; }
-          </style>
-        </head>
-        <body>
-          <div class="wrap">
-            ${qrMarkup}
-          </div>
-        </body>
-      </html>
-    `)
-    printWindow.document.close()
-
-    printWindow.focus()
-    printWindow.print()
-    printWindow.close()
-  }
-
-  return createPortal(
-    <ModalShell onClose={onClose}>
-      <div className={styles.modal}>
-        <ModalHeader title="QR del Producto" onClose={onClose} />
-
-        <div className={styles.body}>
-          <div style={{ display: 'grid', gap: 12, justifyItems: 'center', padding: 16 }}>
-            <div ref={qrRef} style={{ display: 'grid', gap: 10, justifyItems: 'center' }}>
-              <QRCodeSVG value={value} size={220} includeMargin />
-              <div className="code" style={{ fontWeight: 600, letterSpacing: '0.08em' }}>
-                {value}
-              </div>
-            </div>
-
-            <button className={styles.saveBtn} type="button" onClick={handlePrint}>
-              <span>Imprimir</span>
-              <FiPrinter />
-            </button>
-          </div>
-        </div>
-      </div>
-    </ModalShell>,
-    document.body
   )
 }
 
@@ -303,21 +389,27 @@ function QrPrintModal({ open, value, onClose }: QrPrintModalProps): JSX.Element 
 type ProductFormProps = {
   form: FormState
   setField: <K extends keyof FormState>(key: K, value: FormState[K]) => void
+
   onGenerateCode: () => void
-  onGenerateQr: () => void
+  onDownloadQr: () => void
+  onCodeBlur: () => void
+
   onBuyPriceChange: (value: string) => void
   onSellPriceChange: (value: string) => void
   onProfitPctChange: (value: string) => void
+  onStockChange: (value: string) => void
 }
 
 function ProductForm({
   form,
   setField,
   onGenerateCode,
-  onGenerateQr,
+  onDownloadQr,
+  onCodeBlur,
   onBuyPriceChange,
   onSellPriceChange,
-  onProfitPctChange
+  onProfitPctChange,
+  onStockChange
 }: ProductFormProps): JSX.Element {
   return (
     <div className={styles.form}>
@@ -330,6 +422,7 @@ function ProductForm({
               className={styles.input}
               value={form.code}
               onChange={(e) => setField('code', e.target.value)}
+              onBlur={onCodeBlur}
               placeholder=""
             />
 
@@ -338,6 +431,8 @@ function ProductForm({
                 className={styles.iconBtn}
                 type="button"
                 aria-label="Generar código"
+                data-tooltip="Generar código"
+                title="Generar código"
                 onClick={onGenerateCode}
               >
                 <CiBarcode />
@@ -347,12 +442,20 @@ function ProductForm({
                 className={styles.iconBtn}
                 type="button"
                 aria-label="Generar QR"
-                onClick={onGenerateQr}
+                data-tooltip="Generar QR"
+                title="Generar QR"
+                onClick={onDownloadQr}
               >
                 <MdOutlineQrCode2 />
               </button>
 
-              <button className={styles.iconBtn} type="button" aria-label="Ayuda">
+              <button
+                className={styles.iconBtn}
+                type="button"
+                aria-label="Ayuda"
+                data-tooltip="Ayuda"
+                title="Ayuda"
+              >
                 <FiHelpCircle />
               </button>
             </div>
@@ -418,7 +521,7 @@ function ProductForm({
           <input
             className={styles.input}
             value={form.stock}
-            onChange={(e) => setField('stock', e.target.value)}
+            onChange={(e) => onStockChange(e.target.value)}
             inputMode="numeric"
           />
         </div>
@@ -443,7 +546,7 @@ function ProductForm({
 /* ----------------------------- Image Block ------------------------------- */
 
 type ImagePanelProps = {
-  fileInputRef: React.RefObject<HTMLInputElement | null>
+  fileInputRef: RefObject<HTMLInputElement | null>
   previewUrl: string | null
   onPickImage: () => void
   onFileSelected: (file: File | null) => void
@@ -503,55 +606,172 @@ function ImagePanel({
   )
 }
 
+/* ---------------------------- Alerts (Bottom) ---------------------------- */
+
+type AlertKind = 'error' | 'warning'
+type AlertMessage = { kind: AlertKind; text: string; key: string }
+
 /* ---------------------------- Main Component ----------------------------- */
 
-export default function AddProductModal({ open, onClose }: Props): JSX.Element | null {
-  const [form, setForm] = useState<FormState>(initialState)
+export default function AddProductModal({
+  open,
+  onClose,
+  productId,
+  productID
+}: Props): JSX.Element | null {
+  const effectiveProductId = productId ?? productID ?? null
+  const isEditMode = Boolean(effectiveProductId)
 
-  const [qrModalOpen, setQrModalOpen] = useState(false)
-  const [qrValue, setQrValue] = useState('')
+  const [form, setForm] = useState<FormState>(initialState)
 
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+  const [imageIntent, setImageIntent] = useState<ImageIntent>('remove')
 
   const [priceEditMode, setPriceEditMode] = useState<PriceEditMode>(null)
 
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [isLoadingProduct, setIsLoadingProduct] = useState(false)
+
+  // Alertas (todas se muestran abajo)
+  const [sellPriceError, setSellPriceError] = useState<string | null>(null)
+  const [stockAlert, setStockAlert] = useState<string | null>(null)
+  const [skuError, setSkuError] = useState<string | null>(null)
+
+  // QR oculto para exportación
+  const [qrDownloadValue, setQrDownloadValue] = useState('')
+  const qrRenderRef = useRef<HTMLDivElement | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     return () => {
-      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+      if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl)
     }
   }, [imagePreviewUrl])
 
   function clearImage(): void {
     setImageFile(null)
     setImagePreviewUrl(null)
+    setImageIntent('remove')
   }
 
   const closeAll = useCallback(() => {
-    setQrModalOpen(false)
-    clearImage()
+    setSaveError(null)
+    setIsSaving(false)
+    setIsLoadingProduct(false)
     onClose()
   }, [onClose])
 
-  const handleEscapeClose = useCallback(() => {
-    if (qrModalOpen) {
-      setQrModalOpen(false)
+  useEscapeToClose(open, closeAll)
+
+  useEffect(() => {
+    if (!open) return
+
+    // Reset mínimo al abrir
+    setSaveError(null)
+    setSellPriceError(null)
+    setStockAlert(null)
+    setSkuError(null)
+    setQrDownloadValue('')
+    setPriceEditMode(null)
+
+    if (!effectiveProductId) {
+      setForm(initialState)
+      setImageFile(null)
+      setImagePreviewUrl(null)
+      setImageIntent('remove')
       return
     }
-    closeAll()
-  }, [qrModalOpen, closeAll])
 
-  useEscapeToClose(open, handleEscapeClose)
+    const productsApi = getProductsBridge()
+    const get = productsApi?.get
+
+    if (typeof get !== 'function') {
+      setSaveError('No existe products.get en el bridge (preload/main).')
+      return
+    }
+
+    let cancelled = false
+    setIsLoadingProduct(true)
+
+    void (async () => {
+      try {
+        const p = await get(effectiveProductId)
+        if (cancelled) return
+
+        setForm({
+          code: p.sku ?? '',
+          name: p.name ?? '',
+          stockMin: String(p.stockMin ?? 0),
+          stockMax: String(p.stockMax ?? 0),
+          buyPrice: fromCentsToInput(p.cost ?? 0),
+          sellPrice: fromCentsToInput(p.price ?? 0),
+          stock: String(p.stock ?? 0),
+          profitPct: bpToPctInput(p.profitPctBp ?? 0)
+        })
+
+        const existingImage = toRenderableImageUrl(p.imageUrl ?? p.imagePath ?? null)
+        if (existingImage) {
+          setImagePreviewUrl(existingImage)
+          setImageFile(null)
+          setImageIntent('keep')
+        } else {
+          setImagePreviewUrl(null)
+          setImageFile(null)
+          setImageIntent('remove')
+        }
+
+        setPriceEditMode('sell')
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'No se pudo cargar el producto'
+        setSaveError(message)
+      } finally {
+        if (!cancelled) setIsLoadingProduct(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, effectiveProductId])
 
   if (!open) return null
 
+  async function validateSkuUniqueness(sku: string): Promise<boolean> {
+    const normalized = sku.trim()
+    if (!normalized) {
+      setSkuError(null)
+      return true
+    }
+
+    const productsApi = getProductsBridge()
+    const getBySku = productsApi?.getBySku
+
+    if (typeof getBySku !== 'function') {
+      setSkuError(null)
+      return true
+    }
+
+    const existing = await getBySku(normalized)
+    if (!existing) {
+      setSkuError(null)
+      return true
+    }
+
+    if (effectiveProductId && existing.id === effectiveProductId) {
+      setSkuError(null)
+      return true
+    }
+
+    setSkuError(`El código "${normalized}" ya está registrado en otro producto.`)
+    return false
+  }
+
   function setField<K extends keyof FormState>(key: K, value: FormState[K]): void {
     setForm((prev) => ({ ...prev, [key]: value }))
+    if (key === 'code') setSkuError(null)
   }
 
   function ensureProductCode(): string {
@@ -564,13 +784,39 @@ export default function AddProductModal({ open, onClose }: Props): JSX.Element |
   }
 
   function handleGenerateCode(): void {
-    setField('code', generate8DigitCode())
+    const next = generate8DigitCode()
+    setField('code', next)
+    void validateSkuUniqueness(next)
   }
 
-  function handleGenerateQr(): void {
-    const code = ensureProductCode()
-    setQrValue(code)
-    setQrModalOpen(true)
+  async function handleDownloadQr(): Promise<void> {
+    try {
+      setSaveError(null)
+
+      const sku = ensureProductCode()
+      const name = form.name.trim()
+      if (!name) throw new Error('Para generar el QR, primero ingresa el nombre del producto.')
+
+      const isUnique = await validateSkuUniqueness(sku)
+      if (!isUnique)
+        throw new Error('El código de producto ya existe. Cambia el código para generar el QR.')
+
+      const payload = buildQrPayload(sku, name)
+      setQrDownloadValue(payload)
+
+      await nextAnimationFrame()
+
+      const svg = qrRenderRef.current?.querySelector('svg')
+      if (!svg) throw new Error('No se pudo generar el QR para descarga.')
+
+      const safeName = sanitizeFilenamePart(name)
+      const filename = `qr_${sku}_${safeName || 'producto'}.png`
+
+      await downloadQrSvgAsPng(svg, filename, QR_DOWNLOAD_SIZE)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'No se pudo descargar el QR'
+      setSaveError(message)
+    }
   }
 
   function handlePickImage(): void {
@@ -585,21 +831,63 @@ export default function AddProductModal({ open, onClose }: Props): JSX.Element |
 
     if (!file.type.startsWith('image/')) return
 
+    if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl)
+
     setImageFile(file)
     setImagePreviewUrl(URL.createObjectURL(file))
+    setImageIntent('replace')
+  }
+
+  function handleClearImage(): void {
+    if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl)
+    clearImage()
+  }
+
+  function handleStockChange(value: string): void {
+    setField('stock', value)
+
+    const stock = parseInteger(value)
+    const min = parseInteger(form.stockMin)
+
+    if (stock === null || min === null) {
+      setStockAlert(null)
+      return
+    }
+
+    if (stock < min) {
+      setStockAlert(`El stock está por debajo del stock mínimo (${min}).`)
+      return
+    }
+
+    setStockAlert(null)
   }
 
   function handleSellPriceChange(value: string): void {
-    setPriceEditMode('sell')
-    setField('sellPrice', value)
-
     if (!value.trim()) {
+      setSellPriceError(null)
+      setPriceEditMode('sell')
+      setField('sellPrice', value)
       setField('profitPct', '')
       return
     }
 
-    const buy = parseDecimal(form.buyPrice)
+    // No permitir negativos (incluye paste con "-")
+    if (value.includes('-')) {
+      setSellPriceError('El precio de venta no puede ser negativo.')
+      return
+    }
+
     const sell = parseDecimal(value)
+    if (sell !== null && sell < 0) {
+      setSellPriceError('El precio de venta no puede ser negativo.')
+      return
+    }
+
+    setSellPriceError(null)
+    setPriceEditMode('sell')
+    setField('sellPrice', value)
+
+    const buy = parseDecimal(form.buyPrice)
     if (buy === null || sell === null) return
 
     const pct = computeProfitPct(buy, sell)
@@ -621,6 +909,7 @@ export default function AddProductModal({ open, onClose }: Props): JSX.Element |
     const sell = computeSellPrice(buy, pct)
     if (sell === null) return
 
+    // Si el usuario pone % negativo, el sell puede bajar, pero no se bloquea.
     setField('sellPrice', formatNumber(sell, 2))
   }
 
@@ -652,20 +941,61 @@ export default function AddProductModal({ open, onClose }: Props): JSX.Element |
     }
   }
 
+  // Alerta nueva: porcentaje negativo
+  const profitPctNumber = parseDecimal(form.profitPct)
+  const profitPctAlert =
+    profitPctNumber !== null && profitPctNumber < 0
+      ? 'El porcentaje de ganancia es negativo.'
+      : null
+
+  const alerts: AlertMessage[] = [
+    skuError ? { key: 'sku', kind: 'error', text: skuError } : null,
+    sellPriceError ? { key: 'sell', kind: 'error', text: sellPriceError } : null,
+    saveError ? { key: 'save', kind: 'error', text: saveError } : null,
+    stockAlert ? { key: 'stock', kind: 'warning', text: stockAlert } : null,
+    profitPctAlert ? { key: 'pct', kind: 'warning', text: profitPctAlert } : null
+  ].filter((x): x is AlertMessage => x !== null)
+
   async function handleSave(): Promise<void> {
-    if (isSaving) return
+    if (isSaving || isLoadingProduct) return
 
     setIsSaving(true)
     setSaveError(null)
 
     try {
-      const payload = await buildCreateProductPayload(form, imageFile)
+      const code = form.code.trim()
+      const name = form.name.trim()
 
-      if (!payload.sku) throw new Error('Falta el código del producto')
-      if (!payload.name) throw new Error('Falta el nombre del producto')
+      if (!code) throw new Error('Falta el código del producto')
+      if (!name) throw new Error('Falta el nombre del producto')
 
-      await productRepository.create(payload)
+      const sell = parseDecimal(form.sellPrice)
+      if (sell !== null && sell < 0) throw new Error('El precio de venta no puede ser negativo')
 
+      const okSku = await validateSkuUniqueness(code)
+      if (!okSku) throw new Error('El código del producto ya existe. Usa otro código.')
+
+      if (!effectiveProductId) {
+        const payload = await buildCreateProductPayload(form, imageFile)
+        await productRepository.create(payload)
+        closeAll()
+        return
+      }
+
+      const productsApi = getProductsBridge()
+      const update = productsApi?.update
+
+      if (typeof update !== 'function') {
+        throw new Error('No existe products.update en el bridge (preload/main).')
+      }
+
+      const payload: Partial<CreateProductPayload> = await buildUpdateProductPayload(
+        form,
+        imageFile,
+        imageIntent
+      )
+
+      await update(effectiveProductId, payload)
       closeAll()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error al guardar el producto'
@@ -675,11 +1005,13 @@ export default function AddProductModal({ open, onClose }: Props): JSX.Element |
     }
   }
 
+  const modalTitle = isEditMode ? 'Editar Producto' : 'Agregar Producto'
+
   return createPortal(
     <>
       <ModalShell onClose={closeAll}>
         <div className={styles.modal}>
-          <ModalHeader title="Agregar Producto" onClose={closeAll} />
+          <ModalHeader title={modalTitle} onClose={closeAll} />
 
           <div className={styles.body}>
             <div className={styles.contentGrid}>
@@ -687,10 +1019,12 @@ export default function AddProductModal({ open, onClose }: Props): JSX.Element |
                 form={form}
                 setField={setField}
                 onGenerateCode={handleGenerateCode}
-                onGenerateQr={handleGenerateQr}
+                onDownloadQr={handleDownloadQr}
+                onCodeBlur={() => void validateSkuUniqueness(form.code)}
                 onBuyPriceChange={handleBuyPriceChange}
                 onSellPriceChange={handleSellPriceChange}
                 onProfitPctChange={handleProfitPctChange}
+                onStockChange={handleStockChange}
               />
 
               <ImagePanel
@@ -698,20 +1032,57 @@ export default function AddProductModal({ open, onClose }: Props): JSX.Element |
                 previewUrl={imagePreviewUrl}
                 onPickImage={handlePickImage}
                 onFileSelected={handleImageSelected}
-                onClearImage={clearImage}
+                onClearImage={handleClearImage}
               />
             </div>
 
-            {saveError ? (
-              <div style={{ padding: '0 16px', marginTop: 10, color: 'crimson' }}>{saveError}</div>
+            {/* QR oculto usado exclusivamente para exportación */}
+            <div
+              ref={qrRenderRef}
+              style={{
+                position: 'absolute',
+                left: -99999,
+                top: -99999,
+                width: 1,
+                height: 1,
+                overflow: 'hidden'
+              }}
+              aria-hidden="true"
+            >
+              <QRCodeSVG value={qrDownloadValue || ' '} size={QR_DOWNLOAD_SIZE} includeMargin />
+            </div>
+
+            {isLoadingProduct ? (
+              <div style={{ padding: '0 16px', marginTop: 10, opacity: 0.75 }}>
+                Cargando producto...
+              </div>
             ) : null}
 
-            <SaveFooter onSave={handleSave} disabled={isSaving} />
+            {/* Alertas unificadas abajo */}
+            {alerts.length ? (
+              <div
+                style={{ padding: '0 16px', marginTop: 12, display: 'grid', gap: 6 }}
+                role="status"
+                aria-live="polite"
+              >
+                {alerts.map((a) => (
+                  <div
+                    key={a.key}
+                    style={{
+                      fontSize: 12,
+                      color: a.kind === 'error' ? 'crimson' : '#b45309'
+                    }}
+                  >
+                    {a.text}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <SaveFooter onSave={handleSave} disabled={isSaving || isLoadingProduct} />
           </div>
         </div>
       </ModalShell>
-
-      <QrPrintModal open={qrModalOpen} value={qrValue} onClose={() => setQrModalOpen(false)} />
     </>,
     document.body
   )
