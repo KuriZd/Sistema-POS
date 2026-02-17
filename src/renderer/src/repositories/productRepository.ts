@@ -1,3 +1,5 @@
+// src/renderer/src/repositories/productRepository.ts
+
 export type CreateProductPayload = {
   sku: string
   name: string
@@ -12,7 +14,7 @@ export type CreateProductPayload = {
 
 declare global {
   interface Window {
-    api: {
+    pos: {
       products: {
         create: (payload: CreateProductPayload) => Promise<{ id: number }>
       }
@@ -22,7 +24,10 @@ declare global {
 
 export const productRepository = {
   async create(payload: CreateProductPayload): Promise<{ id: number }> {
-    if (!window.api?.products?.create) throw new Error('API no disponible (preload no expuesto)')
-    return await window.api.products.create(payload)
+    if (!window.pos?.products?.create) {
+      throw new Error('POS API no disponible (preload no expuesto)')
+    }
+
+    return await window.pos.products.create(payload)
   }
 }
