@@ -7,7 +7,8 @@ import { getPrisma } from '../prisma'
 
 export type CreateProductPayload = {
   sku: string
-  barcode: string | null
+  // Opcional para que coincida con el payload del renderer (que no manda barcode)
+  barcode?: string | null
   name: string
 
   price: number
@@ -76,8 +77,9 @@ export function registerProductsIpc(): void {
 
     const profitPctBp = toInt(payload?.profitPctBp, 0)
 
+    // Si no viene barcode, usamos sku por defecto
     const barcodeRaw = normalizeString(payload?.barcode)
-    const barcode = barcodeRaw ? barcodeRaw : null
+    const barcode = barcodeRaw ? barcodeRaw : sku
 
     let imagePath: string | null = null
     if (payload?.imageDataUrl) {
