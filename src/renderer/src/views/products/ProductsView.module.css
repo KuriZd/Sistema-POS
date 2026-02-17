@@ -119,6 +119,7 @@
   cursor: pointer;
   display: grid;
   place-items: center;
+  position: relative;
 }
 
 .iconBtnEdit {
@@ -171,6 +172,21 @@
   object-fit: contain;
 }
 
+.filterIcon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: block;
+}
+
+.btnGhost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 6px 14px rgba(16, 24, 40, 0.12);
+}
+
 .dropdown {
   position: absolute;
   top: calc(100% + 10px);
@@ -215,4 +231,77 @@
 .dropdownIcon svg {
   width: 20px;
   height: 20px;
+}
+
+.pageIndicator {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* Caja del globo de texto */
+.iconBtn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px); /* arriba del botón */
+  transform: translateX(-50%) translateY(4px);
+  opacity: 0;
+  pointer-events: none;
+
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+
+  background: rgba(17, 24, 39, 0.95); /* gris oscuro */
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+  z-index: 50;
+}
+
+/* Flechita del globo */
+.iconBtn[data-tooltip]::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%) rotate(45deg);
+  opacity: 0;
+  pointer-events: none;
+
+  width: 8px;
+  height: 8px;
+  background: rgba(17, 24, 39, 0.95);
+
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+  z-index: 49;
+}
+
+/* Mostrar tooltip en hover y focus (accesible teclado) */
+.iconBtn[data-tooltip]:hover::after,
+.iconBtn[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.iconBtn[data-tooltip]:hover::before,
+.iconBtn[data-tooltip]:focus-visible::before {
+  opacity: 1;
+}
+
+/* Respeta usuarios con reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .iconBtn[data-tooltip]::after,
+  .iconBtn[data-tooltip]::before {
+    transition: none;
+  }
 }

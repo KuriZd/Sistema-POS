@@ -1,9 +1,9 @@
 // src/renderer/src/views/ProductsView.tsx
 import { useEffect, useMemo, useRef, useState } from 'react'
 import btnAddIcon from '../../assets/btnadd.png'
+import btnFiltroIcon from '../../assets/btnfiltro.png'
 import styles from './ProductsView.module.css'
 import { FaHandshake } from 'react-icons/fa'
-// import { MdHandshake } from "react-icons/md";
 import { AiOutlineProduct } from 'react-icons/ai'
 import AddProductModal from './AddProductModal'
 import type { JSX } from 'react'
@@ -45,7 +45,12 @@ export default function ProductsView(): JSX.Element {
   // -----------------------------
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const addMenuRef = useRef<HTMLDivElement>(null)
+
+  // -----------------------------
+  // State: modal create/edit
+  // -----------------------------
   const [productModalOpen, setProductModalOpen] = useState(false)
+  const [editingProductId, setEditingProductId] = useState<number | null>(null)
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(data.total / data.pageSize)),
@@ -91,8 +96,32 @@ export default function ProductsView(): JSX.Element {
   }
 
   // -----------------------------
+  // Modal helpers
+  // -----------------------------
+  function openCreateProductModal(): void {
+    setEditingProductId(null)
+    setProductModalOpen(true)
+  }
+
+  function openEditProductModal(productId: number): void {
+    setEditingProductId(productId)
+    setProductModalOpen(true)
+  }
+
+  function closeProductModal(): void {
+    setProductModalOpen(false)
+    setEditingProductId(null)
+    void fetchList(page, pageSize, search)
+  }
+
+  // -----------------------------
   // Dropdown helpers
   // -----------------------------
+  function formatMoneyFromCents(cents: number): string {
+    const value = (cents ?? 0) / 100
+    return value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+  }
+
   function closeAddMenu(): void {
     setAddMenuOpen(false)
   }
@@ -104,10 +133,12 @@ export default function ProductsView(): JSX.Element {
   function handleAddOption(option: 'product' | 'service' | 'assign'): void {
     closeAddMenu()
 
-    if (option === 'product') setProductModalOpen(true)
+    if (option === 'product') {
+      openCreateProductModal()
+      return
+    }
 
     // TODO: conectar con modales reales
-    if (option === 'product') console.log('Agregar -> Producto')
     if (option === 'service') console.log('Agregar -> Servicio')
     if (option === 'assign') console.log('Agregar -> Asignar tutor')
   }
@@ -155,7 +186,11 @@ export default function ProductsView(): JSX.Element {
           <div className={styles.actions}>
             {/* Agregar (dropdown) */}
             <div className={styles.addMenuWrap} ref={addMenuRef}>
-              <button className={`${styles.btn} ${styles.addBtn}`} onClick={toggleAddMenu}>
+              <button
+                className={`${styles.btn} ${styles.addBtn}`}
+                type="button"
+                onClick={toggleAddMenu}
+              >
                 <span>Agregar</span>
                 <img className={styles.addIcon} src={btnAddIcon} alt="" />
               </button>
@@ -164,6 +199,7 @@ export default function ProductsView(): JSX.Element {
                 <div className={styles.dropdown} role="menu" aria-label="Agregar">
                   <button
                     className={styles.dropdownItem}
+                    type="button"
                     onClick={() => handleAddOption('product')}
                   >
                     <span className={styles.dropdownIcon}>
@@ -174,6 +210,7 @@ export default function ProductsView(): JSX.Element {
 
                   <button
                     className={styles.dropdownItem}
+                    type="button"
                     onClick={() => handleAddOption('service')}
                   >
                     <span className={styles.dropdownIcon}>
@@ -181,19 +218,19 @@ export default function ProductsView(): JSX.Element {
                     </span>
                     <span>Servicio</span>
                   </button>
-
-                  {/* <button className={styles.dropdownItem} onClick={() => handleAddOption('assign')}>
-                    <span className={styles.dropdownIcon}>
-                      <FaChalkboardTeacher />
-                    </span>
-                    <span>Asignar tutor</span>
-                  </button> */}
                 </div>
               )}
             </div>
 
-            <button className={styles.btnGhost} onClick={() => console.log('TODO: filtros')}>
-              Filtros ⚙
+            <button
+              className={styles.btnGhost}
+              type="button"
+              onClick={() => console.log('TODO: filtros')}
+              aria-label="Filtros"
+              title="Filtros"
+            >
+              <span>Filtro</span>
+              <img src={btnFiltroIcon} alt="Filtros" className={styles.filterIcon} />
             </button>
 
             <select
@@ -245,13 +282,14 @@ export default function ProductsView(): JSX.Element {
                 <div>{(data.page - 1) * data.pageSize + idx + 1}</div>
                 <div>{p.name}</div>
                 <div className={styles.muted}>{p.stock ?? 'N/A'}</div>
-                <div>{p.price}</div>
+                <div>{formatMoneyFromCents(p.price)}</div>
                 <div className={styles.muted}>{p.barcode ?? p.sku}</div>
 
                 <div className={styles.actionsCell}>
                   <button
                     className={`${styles.iconBtn} ${styles.iconBtnEdit}`}
-                    onClick={() => console.log('TODO: editar', p.id)}
+                    type="button"
+                    onClick={() => openEditProductModal(p.id)}
                     aria-label="Editar"
                     title="Editar"
                   >
@@ -260,6 +298,7 @@ export default function ProductsView(): JSX.Element {
 
                   <button
                     className={`${styles.iconBtn} ${styles.iconBtnDelete}`}
+                    type="button"
                     onClick={() => void handleDelete(p.id)}
                     aria-label="Eliminar"
                     title="Eliminar"
@@ -280,18 +319,23 @@ export default function ProductsView(): JSX.Element {
 
           <button
             className={styles.pageBtn}
+            type="button"
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >
             ←
           </button>
 
-          <span className={styles.muted}>
-            {page} / {totalPages}
-          </span>
+          <div className={styles.pageIndicator}>
+            <span className={styles.muted}>
+              Página
+              {page} / {totalPages}
+            </span>
+          </div>
 
           <button
             className={styles.pageBtn}
+            type="button"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >
@@ -299,7 +343,12 @@ export default function ProductsView(): JSX.Element {
           </button>
         </div>
       </div>
-      <AddProductModal open={productModalOpen} onClose={() => setProductModalOpen(false)} />
+
+      <AddProductModal
+        open={productModalOpen}
+        productId={editingProductId}
+        onClose={closeProductModal}
+      />
     </div>
   )
 }
