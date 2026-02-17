@@ -24,10 +24,6 @@ declare global {
 
 export const productRepository = {
   async create(payload: CreateProductPayload): Promise<{ id: number }> {
-    if (!window.pos?.products?.create) {
-      throw new Error('POS API no disponible (preload no expuesto)')
-    }
-
     return await window.pos.products.create(payload)
   }
 }
