@@ -21,7 +21,7 @@ type AuthUser = { id: number; name: string; role: string }
 
 export default function App(): JSX.Element {
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [active, setActive] = useState<SidebarItemKey>('inventory')
+  const [active, setActive] = useState<SidebarItemKey>('products')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

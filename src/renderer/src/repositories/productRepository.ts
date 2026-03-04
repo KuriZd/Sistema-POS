@@ -1,26 +1,5 @@
 // src/renderer/src/repositories/productRepository.ts
-
-export type CreateProductPayload = {
-  sku: string
-  name: string
-  price: number
-  cost: number
-  profitPctBp: number
-  stock: number
-  stockMin: number
-  stockMax: number
-  imageDataUrl: string | null
-}
-
-declare global {
-  interface Window {
-    pos: {
-      products: {
-        create: (payload: CreateProductPayload) => Promise<{ id: number }>
-      }
-    }
-  }
-}
+import type { CreateProductPayload } from '../types/pos'
 
 export const productRepository = {
   async create(payload: CreateProductPayload): Promise<{ id: number }> {
