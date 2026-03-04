@@ -77,16 +77,13 @@ function clampInt(n: number, min: number, max: number): number {
 
 export function registerProductsIpc(): void {
   // Evita crash si este registro se ejecuta más de una vez
-  for (const ch of [
-    'products:create',
-    'products:list',
-    'products:remove',
-    'products:get',
-    'products:update'
-  ] as const) {
+  for (const ch of ['products:create', 'products:list', 'products:remove', 'products:get', 'products:update'] as const) {
     ipcMain.removeHandler(ch)
   }
 
+  // -----------------------------
+  // Products: create
+  // -----------------------------
   ipcMain.handle('products:create', async (_event, payload: CreateProductPayload) => {
     const sku = normalizeString(payload?.sku)
     const name = normalizeString(payload?.name)
@@ -137,6 +134,9 @@ export function registerProductsIpc(): void {
     }
   })
 
+  // -----------------------------
+  // Products: list (solo activos)
+  // -----------------------------
   ipcMain.handle('products:list', async (_event, query: ProductsListQuery) => {
     const page = clampInt(toInt(query?.page, 1), 1, 1_000_000)
     const pageSize = clampInt(toInt(query?.pageSize, 20), 1, 200)
@@ -146,11 +146,7 @@ export function registerProductsIpc(): void {
       search.length > 0
         ? {
             active: true,
-            OR: [
-              { name: { contains: search } },
-              { sku: { contains: search } },
-              { barcode: { contains: search } }
-            ]
+            OR: [{ name: { contains: search } }, { sku: { contains: search } }, { barcode: { contains: search } }]
           }
         : { active: true }
 
@@ -167,7 +163,8 @@ export function registerProductsIpc(): void {
           barcode: true,
           name: true,
           price: true,
-          stock: true
+          stock: true,
+          active: true // necesario para el renderer (soft delete)
         }
       })
     ])
@@ -175,14 +172,25 @@ export function registerProductsIpc(): void {
     return { items, total, page, pageSize }
   })
 
+  // -----------------------------
+  // Products: remove (soft delete)
+  // -----------------------------
   ipcMain.handle('products:remove', async (_event, id: number) => {
     const productId = toInt(id, 0)
     if (productId <= 0) throw new Error('ID inválido')
 
-    await getPrisma().product.delete({ where: { id: productId } })
+    // "Eliminar" en POS = desactivar para conservar historial y evitar P2003
+    await getPrisma().product.update({
+      where: { id: productId },
+      data: { active: false }
+    })
+
     return { ok: true }
   })
 
+  // -----------------------------
+  // Products: get
+  // -----------------------------
   ipcMain.handle('products:get', async (_event, id: number) => {
     const productId = toInt(id, 0)
     if (productId <= 0) throw new Error('ID inválido')
@@ -212,72 +220,73 @@ export function registerProductsIpc(): void {
     return { ...p, imageUrl }
   })
 
-  ipcMain.handle(
-    'products:update',
-    async (_event, id: number, payload: Partial<CreateProductPayload>) => {
-      const productId = toInt(id, 0)
-      if (productId <= 0) throw new Error('ID inválido')
+  // -----------------------------
+  // Products: update
+  // -----------------------------
+  ipcMain.handle('products:update', async (_event, id: number, payload: Partial<CreateProductPayload>) => {
+    const productId = toInt(id, 0)
+    if (productId <= 0) throw new Error('ID inválido')
 
-      const data: Prisma.ProductUpdateInput = {}
+    const data: Prisma.ProductUpdateInput = {}
 
-      const sku = payload?.sku !== undefined ? normalizeString(payload.sku) : undefined
-      if (sku !== undefined) {
-        if (!sku) throw new Error('SKU requerido')
-        data.sku = sku
-      }
+    const sku = payload?.sku !== undefined ? normalizeString(payload.sku) : undefined
+    if (sku !== undefined) {
+      if (!sku) throw new Error('SKU requerido')
+      data.sku = sku
+    }
 
-      const name = payload?.name !== undefined ? normalizeString(payload.name) : undefined
-      if (name !== undefined) {
-        if (!name) throw new Error('Nombre requerido')
-        data.name = name
-      }
+    const name = payload?.name !== undefined ? normalizeString(payload.name) : undefined
+    if (name !== undefined) {
+      if (!name) throw new Error('Nombre requerido')
+      data.name = name
+    }
 
-      if (payload?.barcode !== undefined) {
-        const b = normalizeString(payload.barcode)
-        data.barcode = b ? b : null
-      }
+    if (payload?.barcode !== undefined) {
+      const b = normalizeString(payload.barcode)
+      data.barcode = b ? b : null
+    }
 
-      if (payload?.price !== undefined) data.price = toInt(payload.price, 0)
-      if (payload?.cost !== undefined) data.cost = toInt(payload.cost, 0)
-      if (payload?.profitPctBp !== undefined) data.profitPctBp = toInt(payload.profitPctBp, 0)
+    if (payload?.price !== undefined) data.price = toInt(payload.price, 0)
+    if (payload?.cost !== undefined) data.cost = toInt(payload.cost, 0)
+    if (payload?.profitPctBp !== undefined) data.profitPctBp = toInt(payload.profitPctBp, 0)
 
-      if (payload?.stock !== undefined) data.stock = toInt(payload.stock, 0)
-      if (payload?.stockMin !== undefined) data.stockMin = toInt(payload.stockMin, 0)
-      if (payload?.stockMax !== undefined) data.stockMax = toInt(payload.stockMax, 0)
+    if (payload?.stock !== undefined) data.stock = toInt(payload.stock, 0)
+    if (payload?.stockMin !== undefined) data.stockMin = toInt(payload.stockMin, 0)
+    if (payload?.stockMax !== undefined) data.stockMax = toInt(payload.stockMax, 0)
 
-      // Imagen: si viene dataUrl => reemplaza. Si viene null explícito => quita imagen.
-      if (payload?.imageDataUrl !== undefined) {
-        if (payload.imageDataUrl === null) {
-          data.imagePath = null
-        } else if (payload.imageDataUrl) {
-          const currentSku =
-            (data.sku as string) ??
-            (
-              await getPrisma().product.findUnique({
-                where: { id: productId },
-                select: { sku: true }
-              })
-            )?.sku
-          if (!currentSku) throw new Error('SKU no disponible para guardar imagen')
+    // Imagen: si viene dataUrl => reemplaza. Si viene null explícito => quita imagen.
+    if (payload?.imageDataUrl !== undefined) {
+      if (payload.imageDataUrl === null) {
+        data.imagePath = null
+      } else if (payload.imageDataUrl) {
+        const currentSku =
+          (data.sku as string) ??
+          (
+            await getPrisma().product.findUnique({
+              where: { id: productId },
+              select: { sku: true }
+            })
+          )?.sku
 
-          data.imagePath = await saveProductImage(payload.imageDataUrl, currentSku)
-        }
-      }
+        if (!currentSku) throw new Error('SKU no disponible para guardar imagen')
 
-      try {
-        const updated = await getPrisma().product.update({
-          where: { id: productId },
-          data,
-          select: { id: true }
-        })
-
-        return { id: updated.id }
-      } catch (err: unknown) {
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-          throw new Error('Ya existe un producto con ese SKU o Barcode')
-        }
-        throw err
+        data.imagePath = await saveProductImage(payload.imageDataUrl, currentSku)
       }
     }
-  )
+
+    try {
+      const updated = await getPrisma().product.update({
+        where: { id: productId },
+        data,
+        select: { id: true }
+      })
+
+      return { id: updated.id }
+    } catch (err: unknown) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new Error('Ya existe un producto con ese SKU o Barcode')
+      }
+      throw err
+    }
+  })
 }
