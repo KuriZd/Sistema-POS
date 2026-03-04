@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import { getPrisma } from './prisma'
 import { PaymentMethod, SaleStatus } from '@prisma/client'
 import { registerProductsIpc } from './ipc/products.ipc'
+import { registerServicesIpc } from './ipc/services.ipc'
 
 let currentUserId: number | null = null
 
@@ -41,6 +42,11 @@ export function registerIpc(): void {
   // Products (centralizado)
   // -------------------------
   registerProductsIpc()
+
+  // -------------------------
+  // Services
+  // -------------------------
+  registerServicesIpc()
 
   // -------------------------
   // Auth
